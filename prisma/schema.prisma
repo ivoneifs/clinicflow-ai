@@ -1,0 +1,193 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  DOCTOR
+  ATTENDANT
+}
+
+enum AppointmentStatus {
+  PENDING_CONFIRMATION
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELED
+}
+
+enum WebhookDirection {
+  RECEIVED
+  SENT
+}
+
+model Clinic {
+  id                String             @id @default(cuid())
+  name              String
+  slug              String             @unique
+  timezone          String             @default("America/Sao_Paulo")
+  aiConfig          Json               @default("{}")
+  evolutionApiKey   String?
+  evolutionApiUrl   String?
+  evolutionInstance String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  users             User[]
+  patients          Patient[]
+  appointments      Appointment[]
+  medicalRecords    MedicalRecord[]
+  webhooks          EvolutionWebhook[]
+  holidays          ClinicHoliday[]
+  rooms             ClinicRoom[]
+
+  @@index([evolutionInstance])
+}
+
+model User {
+  id             String        @id @default(cuid())
+  clinicId       String
+  clinic         Clinic        @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  name           String
+  email          String
+  passwordHash   String
+  role           UserRole
+  specialty      String?
+  professionalId String?
+  agendaConfig   Json          @default("{}")
+  active         Boolean       @default(true)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  appointments   Appointment[] @relation("DoctorAppointments")
+  records        MedicalRecord[] @relation("AuthorRecords")
+  schedules      UserSchedule[]
+
+  @@unique([clinicId, email])
+  @@index([clinicId, role, active])
+  @@index([clinicId, specialty])
+}
+
+model Patient {
+  id            String         @id @default(cuid())
+  clinicId      String
+  clinic        Clinic         @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  name          String
+  cpf           String?
+  phone         String
+  birthDate     DateTime?
+  notes         String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  appointments  Appointment[]
+  records       MedicalRecord[]
+  webhooks      EvolutionWebhook[]
+
+  @@unique([clinicId, phone])
+  @@index([clinicId, name])
+  @@index([clinicId, cpf])
+}
+
+model Appointment {
+  id          String            @id @default(cuid())
+  clinicId    String
+  clinic      Clinic            @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patientId   String
+  patient     Patient           @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  doctorId    String
+  doctor      User              @relation("DoctorAppointments", fields: [doctorId], references: [id], onDelete: Restrict)
+  roomId      String?
+  room        ClinicRoom?       @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  startsAt    DateTime
+  endsAt      DateTime
+  status      AppointmentStatus @default(PENDING_CONFIRMATION)
+  notes       String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  record      MedicalRecord?
+
+  @@index([clinicId, startsAt, status])
+  @@index([doctorId, startsAt, status])
+  @@index([patientId, startsAt])
+}
+
+model MedicalRecord {
+  id            String       @id @default(cuid())
+  clinicId      String
+  clinic        Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patientId     String
+  patient       Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  appointmentId String       @unique
+  appointment   Appointment  @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  authorId      String?
+  author        User?        @relation("AuthorRecords", fields: [authorId], references: [id], onDelete: SetNull)
+  anamnesis     String?
+  prescription  String?
+  transcriptionRaw String?
+  aiSummary     String?
+  attachments   Json         @default("[]")
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([clinicId, patientId, createdAt])
+}
+
+model EvolutionWebhook {
+  id          String           @id @default(cuid())
+  clinicId    String
+  clinic      Clinic           @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patientId   String?
+  patient     Patient?         @relation(fields: [patientId], references: [id], onDelete: SetNull)
+  direction   WebhookDirection
+  event       String
+  instance    String?
+  remoteJid   String?
+  messageId   String?
+  messageText String?
+  payload     Json
+  processedAt DateTime?
+  createdAt   DateTime         @default(now())
+
+  @@index([clinicId, createdAt])
+  @@index([clinicId, remoteJid, createdAt])
+  @@unique([clinicId, messageId])
+}
+
+model UserSchedule {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weekday   Int
+  startsAt  String
+  endsAt    String
+  breakFrom String?
+  breakTo   String?
+  slotMinutes Int     @default(30)
+  active    Boolean  @default(true)
+
+  @@unique([userId, weekday])
+}
+
+model ClinicHoliday {
+  id        String   @id @default(cuid())
+  clinicId  String
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  date      DateTime
+  label     String?
+
+  @@unique([clinicId, date])
+}
+
+model ClinicRoom {
+  id            String        @id @default(cuid())
+  clinicId      String
+  clinic        Clinic        @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  name          String
+  active        Boolean       @default(true)
+  appointments  Appointment[]
+
+  @@unique([clinicId, name])
+}

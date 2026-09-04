@@ -1,0 +1,17 @@
+{
+  "name": "clinic-flow-ai",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Plataforma multitenant de gestão clínica e atendimento via WhatsApp.",
+  "workspaces": ["apps/api", "apps/web"],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w @clinic-flow/api\" \"npm run dev -w @clinic-flow/web\"",
+    "build": "npm run build -w @clinic-flow/api && npm run build -w @clinic-flow/web",
+    "typecheck": "npm run typecheck -w @clinic-flow/api && npm run typecheck -w @clinic-flow/web",
+    "db:generate": "npm run prisma:generate -w @clinic-flow/api",
+    "db:migrate": "npm run prisma:migrate -w @clinic-flow/api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
