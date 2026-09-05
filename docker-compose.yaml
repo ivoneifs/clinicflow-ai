@@ -51,6 +51,7 @@ services:
       dockerfile: apps/web/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required}
+        NEXT_PUBLIC_CLINIC_ID: ${NEXT_PUBLIC_CLINIC_ID:?NEXT_PUBLIC_CLINIC_ID is required}
     environment:
       NODE_ENV: production
       PORT: 3000

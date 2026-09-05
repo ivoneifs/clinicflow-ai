@@ -10,6 +10,8 @@ RUN npm ci
 FROM deps AS build
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_CLINIC_ID
+ENV NEXT_PUBLIC_CLINIC_ID=$NEXT_PUBLIC_CLINIC_ID
 COPY tsconfig.json ./
 COPY apps/web ./apps/web
 RUN npm run build -w @clinic-flow/web
