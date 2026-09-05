@@ -1,71 +1,67 @@
 services:
-  postgres:
+  db:
     image: postgres:16-alpine
-    restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-clinicflow}
       POSTGRES_USER: ${POSTGRES_USER:-clinicflow}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
-      - clinicflow_postgres:/var/lib/postgresql/data
+      - clinicflow-postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-clinicflow} -d ${POSTGRES_DB:-clinicflow}"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
-      retries: 15
+      retries: 20
 
   redis:
     image: redis:7-alpine
-    restart: unless-stopped
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    command: redis-server --appendonly yes
     volumes:
-      - clinicflow_redis:/data
+      - clinicflow-redis:/data
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD} ping | grep PONG"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
-      timeout: 5s
-      retries: 15
+      timeout: 3s
+      retries: 20
 
   api:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-    restart: unless-stopped
     environment:
       NODE_ENV: production
       API_PORT: 3333
-      DATABASE_URL: postgresql://${POSTGRES_USER:-clinicflow}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-clinicflow}?schema=public
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
-      WEBHOOK_SHARED_SECRET: ${WEBHOOK_SHARED_SECRET}
-      N8N_AI_WEBHOOK_URL: ${N8N_AI_WEBHOOK_URL:-}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-clinicflow}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-clinicflow}?schema=public
+      REDIS_URL: redis://redis:6379
+      WEBHOOK_SHARED_SECRET: ${WEBHOOK_SHARED_SECRET:?WEBHOOK_SHARED_SECRET is required}
       EVOLUTION_API_URL: ${EVOLUTION_API_URL}
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
+      EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-nova}
+      N8N_AI_WEBHOOK_URL: ${N8N_AI_WEBHOOK_URL}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5}
     depends_on:
-      postgres:
+      db:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: ["sh", "-c", "npx prisma migrate deploy --schema prisma/schema.prisma && node apps/api/dist/server.js"]
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3333/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
+    expose:
+      - "3333"
 
   web:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
-    restart: unless-stopped
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required}
     environment:
+      NODE_ENV: production
       PORT: 3000
-      HOSTNAME: 0.0.0.0
     depends_on:
-      api:
-        condition: service_healthy
+      - api
+    ports:
+      - "3000"
 
 volumes:
-  clinicflow_postgres:
-  clinicflow_redis:
+  clinicflow-postgres:
+  clinicflow-redis:

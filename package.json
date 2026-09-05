@@ -9,7 +9,8 @@
     "build": "npm run build -w @clinic-flow/api && npm run build -w @clinic-flow/web",
     "typecheck": "npm run typecheck -w @clinic-flow/api && npm run typecheck -w @clinic-flow/web",
     "db:generate": "npm run prisma:generate -w @clinic-flow/api",
-    "db:migrate": "npm run prisma:migrate -w @clinic-flow/api"
+    "db:migrate": "npm run prisma:migrate -w @clinic-flow/api",
+    "db:seed": "npm run prisma:seed -w @clinic-flow/api"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

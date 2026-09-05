@@ -1,6 +1,7 @@
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { prisma } from '../lib/prisma.js';
 import { enqueueIncomingMessage } from '../lib/queues.js';
+import { env } from '../config/env.js';
 
 type EvolutionRequest = FastifyRequest<{ Body: Record<string, any> }>;
 
@@ -14,7 +15,7 @@ export class EvolutionWebhookController {
     const key = data.key ?? {};
     const remoteJid = String(key.remoteJid ?? '');
     if (key.fromMe === true || remoteJid.endsWith('@g.us') || !remoteJid) return reply.code(202).send({ ignored: true });
-    const instance = body.instance ?? body.sender ?? null;
+    const instance = body.instance ?? body.sender ?? env.EVOLUTION_INSTANCE;
     const clinicId = String(request.headers['x-clinic-id'] ?? body.clinicId ?? '');
     const clinic = clinicId
       ? await prisma.clinic.findFirst({ where: { id: clinicId } })

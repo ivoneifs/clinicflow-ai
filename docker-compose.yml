@@ -1,37 +1,27 @@
 services:
-  postgres:
+  db:
     image: postgres:16-alpine
-    container_name: clinicflow-postgres
-    restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-clinicflow}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-clinicflow}
-      POSTGRES_DB: ${POSTGRES_DB:-clinicflow}
+      POSTGRES_DB: clinicflow
+      POSTGRES_USER: clinicflow
+      POSTGRES_PASSWORD: clinicflow
     ports:
       - "5432:5432"
     volumes:
-      - clinicflow_postgres_data:/var/lib/postgresql/data
+      - clinicflow-local-postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-clinicflow} -d ${POSTGRES_DB:-clinicflow}"]
+      test: ["CMD-SHELL", "pg_isready -U clinicflow -d clinicflow"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
 
   redis:
     image: redis:7-alpine
-    container_name: clinicflow-redis
-    restart: unless-stopped
-    command: redis-server --appendonly yes
     ports:
       - "6379:6379"
     volumes:
-      - clinicflow_redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
+      - clinicflow-local-redis:/data
 
 volumes:
-  clinicflow_postgres_data:
-  clinicflow_redis_data:
+  clinicflow-local-postgres:
+  clinicflow-local-redis:
