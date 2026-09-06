@@ -25,6 +25,14 @@ export class AssistantService {
   async suggestReply({ patientName, messageText }: { patientName: string; messageText: string }) {
     return this.generateReply({ patientName, messageText });
   }
+
+  async generateSpeech(text: string) {
+    const config = await getRuntimeConfig();
+    if (!config.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY não configurada.');
+    const client = new OpenAI({ apiKey: config.OPENAI_API_KEY });
+    const response = await client.audio.speech.create({ model: 'gpt-4o-mini-tts', voice: 'alloy', input: text, response_format: 'opus' });
+    return Buffer.from(await response.arrayBuffer()).toString('base64');
+  }
 }
 
 export const assistantService = new AssistantService();

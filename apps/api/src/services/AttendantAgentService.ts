@@ -20,6 +20,12 @@ type N8nResult = {
   reply?: string;
   text?: string;
   output?: string;
+  replyAudio?: string;
+  replyAudioBase64?: string;
+  replyAudioUrl?: string;
+  audio?: string;
+  audioBase64?: string;
+  audioUrl?: string;
   sendViaEvolution?: boolean;
   send?: boolean;
   message?: { text?: string };
@@ -41,12 +47,27 @@ const extractReplyText = (value: unknown): string => {
   return extractReplyText(output.body) || extractReplyText(output.data) || extractReplyText(output.result) || (typeof output.output === 'object' ? extractReplyText(output.output) : '');
 };
 
+const extractReplyAudio = (value: unknown): string => {
+  const result = Array.isArray(value) ? value[0] : value;
+  if (!result || typeof result !== 'object') return '';
+  const output = result as N8nResult & { body?: unknown; data?: unknown; result?: unknown; response?: unknown };
+  const direct = [output.replyAudio, output.replyAudioBase64, output.replyAudioUrl, output.audio, output.audioBase64, output.audioUrl].find((item) => typeof item === 'string' && item.trim());
+  if (direct) return direct.trim();
+  return extractReplyAudio(output.body) || extractReplyAudio(output.data) || extractReplyAudio(output.result) || extractReplyAudio(output.response) || (typeof output.output === 'object' ? extractReplyAudio(output.output) : '');
+};
+
 const extractN8nResult = (value: unknown) => {
   const result = Array.isArray(value) ? value[0] : value;
   const replyText = extractReplyText(result);
+  const replyAudio = extractReplyAudio(result);
   const output = result && typeof result === 'object' ? result as N8nResult : null;
   const hasExplicitSendFlag = Boolean(output && ('sendViaEvolution' in output || 'send' in output));
-  return { replyText, sendViaEvolution: Boolean(replyText) && (!hasExplicitSendFlag || output?.sendViaEvolution === true || output?.send === true) };
+  return { replyText, replyAudio, sendViaEvolution: Boolean(replyText || replyAudio) && (!hasExplicitSendFlag || output?.sendViaEvolution === true || output?.send === true) };
+};
+
+const mediaFromJob = (job: AgentJob) => {
+  const payload = job.payload as { clinicflowMedia?: unknown } | undefined;
+  return payload?.clinicflowMedia;
 };
 
 export class AttendantAgentService {
@@ -56,6 +77,7 @@ export class AttendantAgentService {
     if (!clinic) throw new Error('Clínica do agente não encontrada.');
     const aiConfig = clinic.aiConfig && typeof clinic.aiConfig === 'object' && !Array.isArray(clinic.aiConfig) ? clinic.aiConfig as { autoReply?: boolean } : {};
     if (aiConfig.autoReply === false) return { mode: 'manual', replySentByBackend: false, responseReceived: false };
+    const wantsAudioReply = job.messageType === 'audio';
 
     const sourceWebhook = await prisma.evolutionWebhook.findUnique({ where: { id: job.webhookId }, select: { patientId: true } });
     const patient = sourceWebhook?.patientId ? await prisma.patient.findUnique({ where: { id: sourceWebhook.patientId } }) : null;
@@ -85,12 +107,13 @@ export class AttendantAgentService {
       clinic: { id: clinic.id, name: clinic.name, timezone: clinic.timezone },
       patient: patient ? { id: patient.id, name: patient.name, phone: patient.phone, notes: patient.notes } : { phone: job.phone },
       message: { id: job.webhookId, type: job.messageType || 'text', text: job.text, phone: job.phone, remoteJid: job.remoteJid, source: job.payload },
+      media: mediaFromJob(job),
       context: {
         history: orderedHistory.map((item) => ({ direction: item.direction, text: item.messageText, createdAt: item.createdAt })),
         appointments: appointments.map((item) => ({ startsAt: item.startsAt, status: item.status, doctor: item.doctor })),
       },
-      capabilities: ['acolher', 'tirar_duvidas_operacionais', 'consultar_agenda', 'solicitar_agendamento', 'encaminhar_para_recepcao'],
-      responseContract: { sendViaEvolution: 'retorne true somente se o backend deverá enviar replyText pela Evolution; caso contrário o n8n pode enviar diretamente.' },
+      capabilities: ['acolher', 'tirar_duvidas_operacionais', 'consultar_agenda', 'solicitar_agendamento', 'encaminhar_para_recepcao', 'transcrever_audio', 'analisar_imagens', 'ler_documentos', 'responder_com_audio'],
+      responseContract: { sendViaEvolution: 'retorne true para o backend enviar a resposta. Use replyText para texto e replyAudio/replyAudioUrl para áudio; quando enviar áudio, o backend usará a Evolution.', responseMode: 'audio ou text' },
     });
 
     if (config.N8N_AI_WEBHOOK_URL) {
@@ -108,8 +131,10 @@ export class AttendantAgentService {
       let parsed: unknown = raw;
       try { parsed = raw ? JSON.parse(raw) : {}; } catch { /* resposta textual é válida */ }
       const result = extractN8nResult(parsed);
-      if (result.sendViaEvolution && result.replyText) await this.sendReply({ ...job, text: result.replyText }, job.instance || clinic.evolutionInstance || config.EVOLUTION_INSTANCE || 'Nova');
-      return { mode: 'n8n', replySentByBackend: result.sendViaEvolution && Boolean(result.replyText), responseReceived: true };
+      let replyAudio = result.replyAudio;
+      if (!replyAudio && wantsAudioReply && result.replyText && config.OPENAI_API_KEY) replyAudio = await assistantService.generateSpeech(result.replyText);
+      if (result.sendViaEvolution && (result.replyText || replyAudio)) await this.sendReply({ ...job, text: result.replyText || '[Resposta em áudio]' }, job.instance || clinic.evolutionInstance || config.EVOLUTION_INSTANCE || 'Nova', replyAudio);
+      return { mode: 'n8n', replySentByBackend: result.sendViaEvolution && Boolean(result.replyText || replyAudio), responseReceived: true, responseMode: replyAudio ? 'audio' : 'text' };
     }
 
     if (!config.OPENAI_API_KEY) throw new Error('Configure N8N_AI_WEBHOOK_URL ou OPENAI_API_KEY para ativar o agente.');
@@ -119,13 +144,17 @@ export class AttendantAgentService {
       history: orderedHistory.map((item) => `${item.direction === 'RECEIVED' ? 'Paciente' : 'Atendente'}: ${item.messageText || ''}`),
       appointments: appointments.map((item) => `${item.startsAt.toISOString()} · ${item.doctor.name}`),
     });
-    await this.sendReply({ ...job, text: replyText }, job.instance || clinic.evolutionInstance || config.EVOLUTION_INSTANCE || 'Nova');
-    return { mode: 'openai-fallback', replySentByBackend: true };
+    const replyAudio = wantsAudioReply && config.OPENAI_API_KEY ? await assistantService.generateSpeech(replyText) : undefined;
+    await this.sendReply({ ...job, text: replyText }, job.instance || clinic.evolutionInstance || config.EVOLUTION_INSTANCE || 'Nova', replyAudio);
+    return { mode: 'openai-fallback', replySentByBackend: true, responseMode: replyAudio ? 'audio' : 'text' };
   }
 
-  private async sendReply(job: AgentJob, instance: string) {
-    const sent = await evolutionService.sendText({ instance, number: toBrazilianNumber(job.remoteJid?.split('@')[0] || job.phone), text: job.text });
-    await prisma.evolutionWebhook.create({ data: { clinicId: job.clinicId, patientId: (await prisma.evolutionWebhook.findUnique({ where: { id: job.webhookId }, select: { patientId: true } }))?.patientId || undefined, direction: 'SENT', event: 'AGENT_REPLY', instance, remoteJid: job.remoteJid, messageText: job.text, payload: { source: 'clinicflow-attendant-agent', evolution: sent } } });
+  private async sendReply(job: AgentJob, instance: string, audio?: string) {
+    const number = toBrazilianNumber(job.remoteJid?.split('@')[0] || job.phone);
+    const sent = audio
+      ? await evolutionService.sendAudio({ instance, number, audio })
+      : await evolutionService.sendText({ instance, number, text: job.text });
+    await prisma.evolutionWebhook.create({ data: { clinicId: job.clinicId, patientId: (await prisma.evolutionWebhook.findUnique({ where: { id: job.webhookId }, select: { patientId: true } }))?.patientId || undefined, direction: 'SENT', event: audio ? 'AGENT_AUDIO_REPLY' : 'AGENT_REPLY', instance, remoteJid: job.remoteJid, messageText: job.text, payload: { source: 'clinicflow-attendant-agent', responseMode: audio ? 'audio' : 'text', evolution: sent } } });
   }
 }
 

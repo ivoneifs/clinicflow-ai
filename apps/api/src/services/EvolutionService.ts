@@ -36,6 +36,22 @@ export class EvolutionService {
     }
     try { return JSON.parse(responseText) as Prisma.InputJsonValue; } catch { return { ok: true }; }
   }
+
+  async sendAudio({ instance, number, audio }: { instance: string; number: string; audio: string }): Promise<Prisma.InputJsonValue> {
+    const config = await getRuntimeConfig();
+    if (!config.EVOLUTION_API_URL || !config.EVOLUTION_API_KEY) throw new Error('Evolution API não configurada.');
+    const response = await fetch(`${config.EVOLUTION_API_URL.replace(/\/$/, '')}/message/sendWhatsAppAudio/${encodeURIComponent(instance)}`, {
+      method: 'POST',
+      headers: { apikey: config.EVOLUTION_API_KEY, 'content-type': 'application/json' },
+      body: JSON.stringify({ number: toBrazilianNumber(number), audio }),
+    });
+    const responseText = await response.text();
+    if (!response.ok) {
+      const details = responseText.replace(/\s+/g, ' ').trim().slice(0, 240);
+      throw new Error(`Evolution API respondeu ${response.status} ao enviar áudio${details ? `: ${details}` : '.'}`);
+    }
+    try { return JSON.parse(responseText) as Prisma.InputJsonValue; } catch { return { ok: true }; }
+  }
 }
 
 export const evolutionService = new EvolutionService();
