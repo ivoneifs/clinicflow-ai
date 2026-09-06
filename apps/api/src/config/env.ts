@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
 dotenv.config({ path: fileURLToPath(new URL('../../../../.env', import.meta.url)) });
+dotenv.config({ path: fileURLToPath(new URL('../../../../.env.local', import.meta.url)), override: true });
 dotenv.config();
 
 const schema = z.object({
