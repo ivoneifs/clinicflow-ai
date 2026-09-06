@@ -25,6 +25,7 @@ const fallbackConversations: Conversation[] = [
 const fallbackData: DashboardData = { appointments: fallbackAppointments, conversations: fallbackConversations, waiting: 1 };
 const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') || 'http://localhost:3333';
 const clinicId = process.env.NEXT_PUBLIC_CLINIC_ID;
+function authHeaders(headers: Record<string, string> = {}) { if (typeof window === 'undefined') return headers; const token = sessionStorage.getItem('clinicflow_user_token'); return token ? { ...headers, Authorization: `Bearer ${token}` } : headers; }
 
 function initials(name: string) { return name.split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase(); }
 function formatDate(date: Date) { return new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }).format(date); }
@@ -117,13 +118,13 @@ export default function Home() {
   useEffect(() => {
     if (!clinicId) return;
     let cancelled = false;
-    const load = async () => { try { const response = await fetch(`${apiUrl}/api/v1/dashboard/summary?clinicId=${encodeURIComponent(clinicId)}`, { cache: 'no-store' }); if (!response.ok) throw new Error(`summary-${response.status}`); const next = await response.json() as DashboardData; if (!cancelled) { setData(next); setSyncError(false); } } catch { if (!cancelled) setSyncError(true); } finally { if (!cancelled) setLoading(false); } };
+    const load = async () => { try { const response = await fetch(`${apiUrl}/api/v1/dashboard/summary?clinicId=${encodeURIComponent(clinicId)}`, { cache: 'no-store', headers: authHeaders() }); if (!response.ok) throw new Error(`summary-${response.status}`); const next = await response.json() as DashboardData; if (!cancelled) { setData(next); setSyncError(false); } } catch { if (!cancelled) setSyncError(true); } finally { if (!cancelled) setLoading(false); } };
     void load(); const timer = window.setInterval(load, 30000); return () => { cancelled = true; window.clearInterval(timer); };
   }, []);
 
   useEffect(() => {
     let cancelled = false;
-    const loadEvolutionStatus = async () => { try { const response = await fetch(`${apiUrl}/api/v1/integrations/evolution/status`, { cache: 'no-store' }); if (!response.ok) throw new Error('evolution-status'); const next = await response.json() as IntegrationStatus; if (!cancelled) setEvolutionStatus(next); } catch { if (!cancelled) setEvolutionStatus(undefined); } };
+    const loadEvolutionStatus = async () => { try { const response = await fetch(`${apiUrl}/api/v1/integrations/evolution/status`, { cache: 'no-store', headers: authHeaders() }); if (!response.ok) throw new Error('evolution-status'); const next = await response.json() as IntegrationStatus; if (!cancelled) setEvolutionStatus(next); } catch { if (!cancelled) setEvolutionStatus(undefined); } };
     void loadEvolutionStatus();
     const timer = window.setInterval(loadEvolutionStatus, 60000);
     return () => { cancelled = true; window.clearInterval(timer); };
@@ -133,8 +134,8 @@ export default function Home() {
     if (!clinicId) return;
     const params = `clinicId=${encodeURIComponent(clinicId)}`;
     void Promise.all([
-      fetch(`${apiUrl}/api/v1/patients?${params}`, { cache: 'no-store' }).then((response) => response.ok ? response.json() : Promise.reject(new Error('patients'))),
-      fetch(`${apiUrl}/api/v1/team?${params}`, { cache: 'no-store' }).then((response) => response.ok ? response.json() : Promise.reject(new Error('team'))),
+      fetch(`${apiUrl}/api/v1/patients?${params}`, { cache: 'no-store', headers: authHeaders() }).then((response) => response.ok ? response.json() : Promise.reject(new Error('patients'))),
+      fetch(`${apiUrl}/api/v1/team?${params}`, { cache: 'no-store', headers: authHeaders() }).then((response) => response.ok ? response.json() : Promise.reject(new Error('team'))),
     ]).then(([nextPatients, nextTeam]) => {
       setPatientRecords((nextPatients as Array<{ id: string; name: string; phone: string; lastAppointment?: { startsAt: string } | null; recordsCount?: number }>).map((patient) => ({ id: patient.id, name: patient.name, phone: patient.phone, lastVisit: patient.lastAppointment ? formatTime(patient.lastAppointment.startsAt) : 'sem histórico', recordsCount: patient.recordsCount })));
       setTeam(nextTeam as TeamMember[]);
@@ -146,13 +147,13 @@ export default function Home() {
   const displayDate = useMemo(() => formatDate(new Date()), []);
   const handleCheckIn = (id: string) => {
     setCheckedIn((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
-    if (clinicId) void fetch(`${apiUrl}/api/v1/appointments/${encodeURIComponent(id)}/status`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ clinicId, status: 'IN_PROGRESS' }) });
+    if (clinicId) void fetch(`${apiUrl}/api/v1/appointments/${encodeURIComponent(id)}/status`, { method: 'PATCH', headers: authHeaders({ 'content-type': 'application/json' }), body: JSON.stringify({ clinicId, status: 'IN_PROGRESS' }) });
   };
   const handleCreatePatient = async () => {
     if (!clinicId || !patientForm.name.trim() || !patientForm.phone.trim()) return;
     setSavingPatient(true);
     try {
-      const response = await fetch(`${apiUrl}/api/v1/patients`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ clinicId, ...patientForm }) });
+      const response = await fetch(`${apiUrl}/api/v1/patients`, { method: 'POST', headers: authHeaders({ 'content-type': 'application/json' }), body: JSON.stringify({ clinicId, ...patientForm }) });
       if (!response.ok) throw new Error('patient');
       const created = await response.json() as { id: string; name: string; phone: string };
       setPatientRecords((current) => [{ id: created.id, name: created.name, phone: created.phone, lastVisit: 'sem histórico' }, ...current]);
@@ -164,10 +165,10 @@ export default function Home() {
     if (!clinicId) return;
     setSavingAppointment(true); setAppointmentError('');
     try {
-      const response = await fetch(`${apiUrl}/api/v1/appointments/book`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-clinic-id': clinicId }, body: JSON.stringify({ ...appointmentForm, clinicId, dateTime: new Date(`${appointmentForm.date}T${appointmentForm.time}:00`).toISOString() }) });
+      const response = await fetch(`${apiUrl}/api/v1/appointments/book`, { method: 'POST', headers: authHeaders({ 'content-type': 'application/json', 'x-clinic-id': clinicId }), body: JSON.stringify({ ...appointmentForm, clinicId, dateTime: new Date(`${appointmentForm.date}T${appointmentForm.time}:00`).toISOString() }) });
       const body = await response.json() as { error?: string };
       if (!response.ok) throw new Error(body.error || 'Não foi possível reservar o horário.');
-      const refreshed = await fetch(`${apiUrl}/api/v1/dashboard/summary?clinicId=${encodeURIComponent(clinicId)}`);
+      const refreshed = await fetch(`${apiUrl}/api/v1/dashboard/summary?clinicId=${encodeURIComponent(clinicId)}`, { headers: authHeaders() });
       if (refreshed.ok) setData(await refreshed.json() as DashboardData);
       setShowAppointmentForm(false);
       setAppointmentForm({ patientName: '', phone: '', doctorId: 'doctor-helena', date: new Date().toISOString().slice(0, 10), time: '09:00', notes: '' });
@@ -176,7 +177,7 @@ export default function Home() {
   const handleSuggestReply = async (conversation?: Conversation) => {
     if (!conversation?.patient?.name || !conversation.messageText) return;
     setSuggesting(true); setSuggestion('');
-    try { const response = await fetch(`${apiUrl}/api/v1/assistant/suggest-reply`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ patientName: conversation.patient.name, messageText: conversation.messageText }) }); const body = await response.json() as { suggestion?: string; error?: string }; if (!response.ok) throw new Error(body.error || 'Não foi possível gerar a sugestão.'); setSuggestion(body.suggestion || ''); } catch (error) { setSuggestion(error instanceof Error ? error.message : 'Não foi possível gerar a sugestão.'); } finally { setSuggesting(false); }
+    try { const response = await fetch(`${apiUrl}/api/v1/assistant/suggest-reply`, { method: 'POST', headers: authHeaders({ 'content-type': 'application/json' }), body: JSON.stringify({ patientName: conversation.patient.name, messageText: conversation.messageText }) }); const body = await response.json() as { suggestion?: string; error?: string }; if (!response.ok) throw new Error(body.error || 'Não foi possível gerar a sugestão.'); setSuggestion(body.suggestion || ''); } catch (error) { setSuggestion(error instanceof Error ? error.message : 'Não foi possível gerar a sugestão.'); } finally { setSuggesting(false); }
   };
 
   if (!authReady) return null;

@@ -8,11 +8,25 @@ import { assistantService } from './services/AssistantService.js';
 import { evolutionService } from './services/EvolutionService.js';
 import { registerAdminRoutes } from './admin.js';
 import { registerAuthRoutes } from './auth.js';
+import { readUserToken } from './auth.js';
+import { isMasterToken } from './admin.js';
 
 const clinicId = (request: { headers: Record<string, any>; query?: any; body?: any }) => String(request.headers['x-clinic-id'] ?? request.query?.clinicId ?? request.body?.clinicId ?? '');
 
 export async function registerRoutes(app: FastifyInstance) {
   app.get('/health', async () => ({ status: 'ok', service: 'clinicflow-api' }));
+  app.addHook('preHandler', async (request: any, reply: any) => {
+    const path = request.url.split('?')[0];
+    if (!path.startsWith('/api/v1/') || path === '/api/v1/webhooks/evolution' || path === '/api/v1/appointments/available-slots' || path === '/api/v1/appointments/book' || path.startsWith('/api/v1/auth/') || path.startsWith('/api/v1/admin/')) return;
+    const authorization = String(request.headers.authorization || '');
+    const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+    if (isMasterToken(token)) return;
+    const user = readUserToken(token);
+    if (!user) return reply.code(401).send({ error: 'Faça login para continuar.' });
+    const suppliedClinicId = String(request.headers['x-clinic-id'] ?? request.query?.clinicId ?? request.body?.clinicId ?? '');
+    if (suppliedClinicId && suppliedClinicId !== user.clinicId) return reply.code(403).send({ error: 'Usuário sem acesso a esta clínica.' });
+    request.auth = user;
+  });
   await registerAuthRoutes(app);
   app.post('/api/v1/webhooks/evolution', (request, reply) => evolutionWebhookController.handle(request as any, reply));
   app.get('/api/v1/patients', async (request, reply) => {
