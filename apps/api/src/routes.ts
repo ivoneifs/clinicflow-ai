@@ -7,11 +7,13 @@ import { prisma } from './lib/prisma.js';
 import { assistantService } from './services/AssistantService.js';
 import { evolutionService } from './services/EvolutionService.js';
 import { registerAdminRoutes } from './admin.js';
+import { registerAuthRoutes } from './auth.js';
 
 const clinicId = (request: { headers: Record<string, any>; query?: any; body?: any }) => String(request.headers['x-clinic-id'] ?? request.query?.clinicId ?? request.body?.clinicId ?? '');
 
 export async function registerRoutes(app: FastifyInstance) {
   app.get('/health', async () => ({ status: 'ok', service: 'clinicflow-api' }));
+  await registerAuthRoutes(app);
   app.post('/api/v1/webhooks/evolution', (request, reply) => evolutionWebhookController.handle(request as any, reply));
   app.get('/api/v1/patients', async (request, reply) => {
     const query = z.object({ clinicId: z.string().optional(), q: z.string().trim().optional(), limit: z.coerce.number().int().min(1).max(100).default(50) }).parse(request.query);
