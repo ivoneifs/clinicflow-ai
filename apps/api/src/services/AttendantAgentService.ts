@@ -64,6 +64,13 @@ export class AttendantAgentService {
     const orderedHistory = [...history].reverse();
     const body = JSON.stringify({
       event: 'clinicflow.attendant.incoming',
+      clinicId: job.clinicId,
+      webhookId: job.webhookId,
+      phone: job.phone,
+      remoteJid: job.remoteJid,
+      text: job.text,
+      messageType: job.messageType || 'text',
+      instance: job.instance || clinic.evolutionInstance || config.EVOLUTION_INSTANCE,
       agent: { name: 'ClinicFlow Atendente', version: '1.0', channel: 'whatsapp', instance: job.instance || clinic.evolutionInstance || config.EVOLUTION_INSTANCE },
       clinic: { id: clinic.id, name: clinic.name, timezone: clinic.timezone },
       patient: patient ? { id: patient.id, name: patient.name, phone: patient.phone, notes: patient.notes } : { phone: job.phone },
