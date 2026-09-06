@@ -6,6 +6,7 @@ import { appointmentService } from './services/AppointmentService.js';
 import { prisma } from './lib/prisma.js';
 import { assistantService } from './services/AssistantService.js';
 import { evolutionService } from './services/EvolutionService.js';
+import { registerAdminRoutes } from './admin.js';
 
 const clinicId = (request: { headers: Record<string, any>; query?: any; body?: any }) => String(request.headers['x-clinic-id'] ?? request.query?.clinicId ?? request.body?.clinicId ?? '');
 
@@ -128,4 +129,5 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get('/api/v1/integrations/evolution/status', async (_request, reply) => {
     try { return await evolutionService.getStatus(); } catch (error) { return reply.code(503).send({ error: error instanceof Error ? error.message : 'Não foi possível consultar a Evolution.' }); }
   });
+  await registerAdminRoutes(app);
 }

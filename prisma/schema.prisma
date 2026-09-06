@@ -191,3 +191,19 @@ model ClinicRoom {
 
   @@unique([clinicId, name])
 }
+
+model MasterCredential {
+  id           String   @id @default("primary")
+  email        String   @unique
+  passwordHash String
+  tokenVersion Int      @default(1)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model SystemSetting {
+  key       String   @id
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

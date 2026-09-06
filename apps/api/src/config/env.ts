@@ -17,6 +17,9 @@ const schema = z.object({
   EVOLUTION_INSTANCE: z.string().default('nova'),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().default('gpt-5'),
+  MASTER_ADMIN_EMAIL: z.string().email().optional(),
+  MASTER_ADMIN_PASSWORD: z.string().min(12).optional(),
+  MASTER_ADMIN_TOKEN_SECRET: z.string().min(32).optional(),
   N8N_AI_WEBHOOK_URL: z.string().url().optional().or(z.literal('')),
 });
 
