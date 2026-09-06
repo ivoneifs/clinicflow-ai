@@ -174,5 +174,24 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get('/api/v1/integrations/evolution/status', async (_request, reply) => {
     try { return await evolutionService.getStatus(); } catch (error) { return reply.code(503).send({ error: error instanceof Error ? error.message : 'Não foi possível consultar a Evolution.' }); }
   });
+  app.get('/api/v1/settings/ai', async (request, reply) => {
+    const query = z.object({ clinicId: z.string().optional() }).parse(request.query);
+    const id = clinicId({ headers: request.headers, query });
+    if (!id) return reply.code(400).send({ error: 'clinicId é obrigatório.' });
+    const clinic = await prisma.clinic.findUnique({ where: { id }, select: { aiConfig: true } });
+    if (!clinic) return reply.code(404).send({ error: 'Clínica não encontrada.' });
+    const config = clinic.aiConfig && typeof clinic.aiConfig === 'object' && !Array.isArray(clinic.aiConfig) ? clinic.aiConfig as Record<string, unknown> : {};
+    return { enabled: config.autoReply !== false };
+  });
+  app.patch('/api/v1/settings/ai', async (request, reply) => {
+    const body = z.object({ clinicId: z.string().optional(), enabled: z.boolean() }).parse(request.body);
+    const id = clinicId({ headers: request.headers, body });
+    if (!id) return reply.code(400).send({ error: 'clinicId é obrigatório.' });
+    const clinic = await prisma.clinic.findUnique({ where: { id }, select: { aiConfig: true } });
+    if (!clinic) return reply.code(404).send({ error: 'Clínica não encontrada.' });
+    const current = clinic.aiConfig && typeof clinic.aiConfig === 'object' && !Array.isArray(clinic.aiConfig) ? clinic.aiConfig as Record<string, unknown> : {};
+    await prisma.clinic.update({ where: { id }, data: { aiConfig: { ...current, autoReply: body.enabled } as Prisma.InputJsonValue } });
+    return { enabled: body.enabled };
+  });
   await registerAdminRoutes(app);
 }

@@ -54,6 +54,8 @@ export class AttendantAgentService {
     const config = await getRuntimeConfig();
     const clinic = await prisma.clinic.findUnique({ where: { id: job.clinicId } });
     if (!clinic) throw new Error('Clínica do agente não encontrada.');
+    const aiConfig = clinic.aiConfig && typeof clinic.aiConfig === 'object' && !Array.isArray(clinic.aiConfig) ? clinic.aiConfig as { autoReply?: boolean } : {};
+    if (aiConfig.autoReply === false) return { mode: 'manual', replySentByBackend: false, responseReceived: false };
 
     const sourceWebhook = await prisma.evolutionWebhook.findUnique({ where: { id: job.webhookId }, select: { patientId: true } });
     const patient = sourceWebhook?.patientId ? await prisma.patient.findUnique({ where: { id: sourceWebhook.patientId } }) : null;
