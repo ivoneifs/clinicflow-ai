@@ -31,14 +31,22 @@ const toBrazilianNumber = (phone: string) => {
   return digits.startsWith('55') ? digits : `55${digits}`;
 };
 
+const extractReplyText = (value: unknown): string => {
+  const result = Array.isArray(value) ? value[0] : value;
+  if (typeof result === 'string') return result.trim();
+  if (!result || typeof result !== 'object') return '';
+  const output = result as N8nResult & { body?: unknown; data?: unknown; result?: unknown };
+  const direct = [output.replyText, output.reply, output.text, output.message?.text, typeof output.output === 'string' ? output.output : ''].find((item) => typeof item === 'string' && item.trim());
+  if (direct) return direct.trim();
+  return extractReplyText(output.body) || extractReplyText(output.data) || extractReplyText(output.result) || (typeof output.output === 'object' ? extractReplyText(output.output) : '');
+};
+
 const extractN8nResult = (value: unknown) => {
-  if (typeof value === 'string') return { replyText: value.trim(), sendViaEvolution: false };
-  if (!value || typeof value !== 'object') return { replyText: '', sendViaEvolution: false };
-  const result = value as N8nResult;
-  return {
-    replyText: String(result.replyText || result.reply || result.text || result.output || result.message?.text || '').trim(),
-    sendViaEvolution: result.sendViaEvolution === true || result.send === true,
-  };
+  const result = Array.isArray(value) ? value[0] : value;
+  const replyText = extractReplyText(result);
+  const output = result && typeof result === 'object' ? result as N8nResult : null;
+  const hasExplicitSendFlag = Boolean(output && ('sendViaEvolution' in output || 'send' in output));
+  return { replyText, sendViaEvolution: Boolean(replyText) && (!hasExplicitSendFlag || output?.sendViaEvolution === true || output?.send === true) };
 };
 
 export class AttendantAgentService {

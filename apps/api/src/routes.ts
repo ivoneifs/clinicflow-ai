@@ -127,12 +127,41 @@ export async function registerRoutes(app: FastifyInstance) {
     const id = clinicId({ headers: request.headers, query: request.query });
     if (!id) return reply.code(400).send({ error: 'clinicId é obrigatório.' });
     const start = new Date(); start.setHours(0, 0, 0, 0); const end = new Date(start); end.setDate(end.getDate() + 1);
-    const [appointments, conversations, waiting] = await Promise.all([
+    const [appointments, waiting] = await Promise.all([
       prisma.appointment.findMany({ where: { clinicId: id, startsAt: { gte: start, lt: end } }, include: { patient: true, doctor: { select: { name: true, specialty: true } } }, orderBy: { startsAt: 'asc' } }),
-      prisma.evolutionWebhook.findMany({ where: { clinicId: id, direction: 'RECEIVED', createdAt: { gte: start } }, include: { patient: true }, orderBy: { createdAt: 'desc' }, take: 8 }),
       prisma.appointment.count({ where: { clinicId: id, startsAt: { gte: start, lt: end }, status: 'IN_PROGRESS' } }),
     ]);
-    return { appointments, conversations, waiting };
+    return { appointments, conversations: [], waiting };
+  });
+  app.get('/api/v1/conversations', async (request, reply) => {
+    const query = z.object({ clinicId: z.string().optional(), limit: z.coerce.number().int().min(1).max(100).default(30) }).parse(request.query);
+    const id = clinicId({ headers: request.headers, query });
+    if (!id) return reply.code(400).send({ error: 'clinicId é obrigatório.' });
+    const messages = await prisma.evolutionWebhook.findMany({ where: { clinicId: id }, include: { patient: true }, orderBy: { createdAt: 'desc' }, take: Math.max(query.limit * 4, 30) });
+    const latestByPatient = new Map<string, (typeof messages)[number]>();
+    for (const message of messages) {
+      const key = message.patientId || message.remoteJid || message.id;
+      if (!latestByPatient.has(key)) latestByPatient.set(key, message);
+    }
+    return Array.from(latestByPatient.values()).slice(0, query.limit);
+  });
+  app.post('/api/v1/conversations', async (request, reply) => {
+    const body = z.object({ clinicId: z.string().optional(), phone: z.string().trim().min(8), patientName: z.string().trim().min(2), messageText: z.string().trim().min(1).max(4000) }).parse(request.body);
+    const id = clinicId({ headers: request.headers, body });
+    if (!id) return reply.code(400).send({ error: 'clinicId é obrigatório.' });
+    const clinic = await prisma.clinic.findUnique({ where: { id } });
+    if (!clinic) return reply.code(404).send({ error: 'Clínica não encontrada.' });
+    const phone = body.phone.replace(/\D/g, '').replace(/^55(?=\d{10,11}$)/, '');
+    if (!/^\d{10,15}$/.test(phone)) return reply.code(422).send({ error: 'Número de WhatsApp inválido.' });
+    const instance = clinic.evolutionInstance || process.env.EVOLUTION_INSTANCE || 'Nova';
+    try {
+      const delivery = await evolutionService.sendText({ instance, number: phone, text: body.messageText });
+      const patient = await prisma.patient.upsert({ where: { clinicId_phone: { clinicId: id, phone } }, update: { name: body.patientName }, create: { clinicId: id, phone, name: body.patientName } });
+      const message = await prisma.evolutionWebhook.create({ data: { clinicId: id, patientId: patient.id, direction: 'SENT', event: 'MESSAGES_UPSERT', instance, remoteJid: `${phone}@s.whatsapp.net`, messageText: body.messageText, payload: { delivery } }, include: { patient: true } });
+      return message;
+    } catch (error) {
+      return reply.code(503).send({ error: error instanceof Error ? error.message : 'Não foi possível enviar a mensagem.' });
+    }
   });
   app.post('/api/v1/assistant/suggest-reply', async (request, reply) => {
     const body = z.object({ patientName: z.string().min(1), messageText: z.string().min(1) }).parse(request.body);
