@@ -22,7 +22,7 @@ export async function getRuntimeConfig() {
     OPENAI_API_KEY: values.OPENAI_API_KEY || process.env.OPENAI_API_KEY,
     EVOLUTION_API_URL: values.EVOLUTION_API_URL || process.env.EVOLUTION_API_URL,
     EVOLUTION_API_KEY: values.EVOLUTION_API_KEY || process.env.EVOLUTION_API_KEY,
-    EVOLUTION_INSTANCE: values.EVOLUTION_INSTANCE || process.env.EVOLUTION_INSTANCE || 'nova',
+    EVOLUTION_INSTANCE: values.EVOLUTION_INSTANCE || process.env.EVOLUTION_INSTANCE || 'Nova',
     N8N_AI_WEBHOOK_URL: values.N8N_AI_WEBHOOK_URL || process.env.N8N_AI_WEBHOOK_URL,
     WEBHOOK_SHARED_SECRET: values.WEBHOOK_SHARED_SECRET || process.env.WEBHOOK_SHARED_SECRET,
   };

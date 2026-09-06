@@ -9,5 +9,5 @@ export const whatsappQueue = new Queue('clinicflow-whatsapp', {
   defaultJobOptions: { attempts: 3, backoff: { type: 'exponential', delay: 1500 }, removeOnComplete: 1000, removeOnFail: 5000 },
 });
 
-export const enqueueIncomingMessage = (payload: { clinicId: string; webhookId: string; phone: string; text: string }) =>
+export const enqueueIncomingMessage = (payload: { clinicId: string; webhookId: string; phone: string; remoteJid?: string; text: string; messageType?: string; instance?: string; payload?: Record<string, unknown> }) =>
   whatsappQueue.add('process-incoming-message', payload);

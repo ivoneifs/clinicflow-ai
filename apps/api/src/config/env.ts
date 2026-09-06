@@ -14,7 +14,7 @@ const schema = z.object({
   WEBHOOK_SHARED_SECRET: z.string().optional(),
   EVOLUTION_API_URL: z.string().optional(),
   EVOLUTION_API_KEY: z.string().optional(),
-  EVOLUTION_INSTANCE: z.string().default('nova'),
+  EVOLUTION_INSTANCE: z.string().default('Nova'),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().default('gpt-5'),
   MASTER_ADMIN_EMAIL: z.string().email().optional(),

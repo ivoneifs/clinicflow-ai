@@ -9,7 +9,7 @@ Quando a mensagem pedir algo que depende da equipe, diga que vai encaminhar para
 Entregue somente a sugestão de mensagem, sem aspas e sem explicações.`;
 
 export class AssistantService {
-  async suggestReply({ patientName, messageText }: { patientName: string; messageText: string }) {
+  async generateReply({ patientName, messageText, history = [], appointments = [] }: { patientName: string; messageText: string; history?: string[]; appointments?: string[] }) {
     const config = await getRuntimeConfig();
     if (!config.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY não configurada.');
     const client = new OpenAI({ apiKey: config.OPENAI_API_KEY });
@@ -17,9 +17,13 @@ export class AssistantService {
       model: env.OPENAI_MODEL,
       store: false,
       instructions: systemPrompt,
-      input: `Paciente: ${patientName}\nMensagem recebida: ${messageText}\n\nEscreva a melhor resposta para enviar:`,
+      input: `Paciente: ${patientName}\nHistórico recente:\n${history.join('\n') || 'Sem histórico'}\nPróximos agendamentos:\n${appointments.join('\n') || 'Nenhum agendamento confirmado'}\nMensagem recebida: ${messageText}\n\nEscreva a melhor resposta para enviar:`,
     });
     return response.output_text.trim();
+  }
+
+  async suggestReply({ patientName, messageText }: { patientName: string; messageText: string }) {
+    return this.generateReply({ patientName, messageText });
   }
 }
 

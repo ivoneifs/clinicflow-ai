@@ -6,7 +6,8 @@ import { env } from '../config/env.js';
 type EvolutionRequest = FastifyRequest<{ Body: Record<string, any> }>;
 
 const normalizePhone = (value: string) => value.replace(/\D/g, '').replace(/^55(?=\d{10,11}$)/, '');
-const messageTextFrom = (data: any) => data?.message?.conversation ?? data?.message?.extendedTextMessage?.text ?? data?.message?.imageMessage?.caption ?? '';
+const messageTypeFrom = (data: any) => data?.message?.audioMessage ? 'audio' : data?.message?.imageMessage ? 'image' : data?.message?.videoMessage ? 'video' : data?.message?.documentMessage ? 'document' : 'text';
+const messageTextFrom = (data: any) => data?.message?.conversation ?? data?.message?.extendedTextMessage?.text ?? data?.message?.imageMessage?.caption ?? data?.message?.videoMessage?.caption ?? (messageTypeFrom(data) === 'audio' ? '[Áudio recebido]' : '');
 
 export class EvolutionWebhookController {
   async handle(request: EvolutionRequest, reply: FastifyReply) {
@@ -20,7 +21,7 @@ export class EvolutionWebhookController {
     const clinic = clinicId
       ? await prisma.clinic.findFirst({ where: { id: clinicId } })
       : instance
-        ? await prisma.clinic.findFirst({ where: { evolutionInstance: String(instance) } })
+        ? await prisma.clinic.findFirst({ where: { evolutionInstance: { equals: String(instance), mode: 'insensitive' } } })
         : null;
     if (!clinic) return reply.code(404).send({ error: 'Clínica não identificada.' });
     const phone = normalizePhone(remoteJid.split('@')[0]);
@@ -34,14 +35,16 @@ export class EvolutionWebhookController {
     }
 
     const patient = await prisma.patient.upsert({ where: { clinicId_phone: { clinicId: clinic.id, phone } }, update: { name: data.pushName || undefined }, create: { clinicId: clinic.id, phone, name: data.pushName || 'Paciente WhatsApp' } });
-    const webhook = await prisma.evolutionWebhook.create({ data: { clinicId: clinic.id, patientId: patient.id, direction: 'RECEIVED', event: String(body.event ?? 'MESSAGES_UPSERT'), instance, remoteJid, messageId: key.id ?? undefined, messageText: text, payload: body } });
+    const resolvedInstance = String(instance || clinic.evolutionInstance || env.EVOLUTION_INSTANCE || 'Nova');
+    const messageType = messageTypeFrom(data);
+    const webhook = await prisma.evolutionWebhook.create({ data: { clinicId: clinic.id, patientId: patient.id, direction: 'RECEIVED', event: String(body.event ?? 'MESSAGES_UPSERT'), instance: resolvedInstance, remoteJid, messageId: key.id ?? undefined, messageText: text, payload: body } });
 
     const quickReply = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
     const pending = await prisma.appointment.findFirst({ where: { clinicId: clinic.id, patientId: patient.id, status: 'PENDING_CONFIRMATION', startsAt: { gte: new Date() } }, orderBy: { startsAt: 'asc' } });
     if (pending && ['sim', 's', 'confirmo', 'confirmar'].includes(quickReply)) await prisma.appointment.update({ where: { id: pending.id }, data: { status: 'SCHEDULED' } });
     if (pending && ['nao', 'n', 'cancelar', 'cancela'].includes(quickReply)) await prisma.appointment.update({ where: { id: pending.id }, data: { status: 'CANCELED' } });
 
-    await enqueueIncomingMessage({ clinicId: clinic.id, webhookId: webhook.id, phone, text });
+    await enqueueIncomingMessage({ clinicId: clinic.id, webhookId: webhook.id, phone, remoteJid, text, messageType, instance: resolvedInstance, payload: body });
     await prisma.evolutionWebhook.update({ where: { id: webhook.id }, data: { processedAt: new Date() } });
     return reply.code(202).send({ accepted: true, webhookId: webhook.id, quickReplyHandled: Boolean(pending && ['sim', 's', 'confirmo', 'confirmar', 'nao', 'n', 'cancelar', 'cancela'].includes(quickReply)) });
   }
